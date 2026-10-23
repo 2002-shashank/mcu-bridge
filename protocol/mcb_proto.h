@@ -8,7 +8,7 @@
  *   0  u8   version (MCB_VERSION)
  *   1  u8   type    (enum mcb_type)
  *   2  u8   len     payload length, 0..MCB_MAX_PAYLOAD
- *   3  u8   flags   reserved, 0
+ *   3  u8   boot_id sender's random 1..255, fixed for one boot
  *   4  le32 seq     per-direction sequence number
  *   8  le32 timestamp_us, sender's monotonic clock (wraps every ~71.6 min)
  *  12  len  payload
@@ -72,7 +72,7 @@ enum mcb_status {
 struct mcb_frame {
 	uint8_t type;
 	uint8_t len;
-	uint8_t flags;
+	uint8_t boot_id;
 	uint32_t seq;
 	uint32_t timestamp_us;
 	uint8_t payload[MCB_MAX_PAYLOAD];
@@ -166,7 +166,7 @@ static inline int mcb_frame_encode(const struct mcb_frame *f, uint8_t *wire)
 	raw[0] = MCB_VERSION;
 	raw[1] = f->type;
 	raw[2] = f->len;
-	raw[3] = f->flags;
+	raw[3] = f->boot_id;
 	mcb_put_le32(raw + 4, f->seq);
 	mcb_put_le32(raw + 8, f->timestamp_us);
 	memcpy(raw + MCB_HDR_LEN, f->payload, f->len);
@@ -208,7 +208,7 @@ static inline enum mcb_rx_status mcb_frame_decode(const uint8_t *cobs, size_t n,
 
 	f->type = raw[1];
 	f->len = raw[2];
-	f->flags = raw[3];
+	f->boot_id = raw[3];
 	f->seq = mcb_get_le32(raw + 4);
 	f->timestamp_us = mcb_get_le32(raw + 8);
 	memcpy(f->payload, raw + MCB_HDR_LEN, f->len);
@@ -256,14 +256,16 @@ static inline enum mcb_rx_status mcb_rx_byte(struct mcb_rx *rx, uint8_t b,
 /* Per-direction sequence tracking. Zero-initialize before use. */
 struct mcb_seq {
 	bool synced;
+	uint8_t boot_id;
 	uint32_t next;
 };
 
 /*
  * Account for a valid frame. Returns how many frames were lost before it.
- * Sets *reset when the sender restarted: a HELLO, or seq moving backwards
- * (HELLO itself lost). Signed difference keeps this correct across the
- * 2^32 wrap.
+ * Sets *reset when the sender restarted: its boot_id changed (works even
+ * when HELLO was lost, e.g. during USB enumeration after a replug), a HELLO,
+ * or seq moving backwards (same boot_id by chance). The signed difference
+ * keeps the gap correct across the 2^32 wrap.
  */
 static inline uint32_t mcb_seq_update(struct mcb_seq *s, const struct mcb_frame *f,
 				      bool *reset)
@@ -271,10 +273,12 @@ static inline uint32_t mcb_seq_update(struct mcb_seq *s, const struct mcb_frame 
 	int32_t d = (int32_t)(f->seq - s->next);
 	uint32_t lost = 0;
 
-	*reset = f->type == MCB_TYPE_HELLO || (s->synced && d < 0);
+	*reset = s->synced && (f->boot_id != s->boot_id || d < 0);
+	*reset |= f->type == MCB_TYPE_HELLO;
 	if (s->synced && !*reset)
 		lost = (uint32_t)d;
 	s->synced = true;
+	s->boot_id = f->boot_id;
 	s->next = f->seq + 1;
 	return lost;
 }

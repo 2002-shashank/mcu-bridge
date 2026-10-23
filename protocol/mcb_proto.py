@@ -50,7 +50,7 @@ class Frame:
     seq: int = 0
     timestamp_us: int = 0
     payload: bytes = b""
-    flags: int = 0
+    boot_id: int = 1
 
 
 def cobs_encode(data: bytes) -> bytes:
@@ -94,7 +94,7 @@ def frame_encode(f: Frame) -> bytes:
     """Frame -> wire bytes, including the 0x00 delimiter."""
     if len(f.payload) > MAX_PAYLOAD:
         raise ValueError("payload too long")
-    raw = struct.pack("<BBBBII", VERSION, f.type, len(f.payload), f.flags,
+    raw = struct.pack("<BBBBII", VERSION, f.type, len(f.payload), f.boot_id,
                       f.seq & U32, f.timestamp_us & U32) + bytes(f.payload)
     raw += struct.pack("<I", crc32(raw))
     return cobs_encode(raw) + b"\x00"
@@ -108,10 +108,10 @@ def frame_decode(cobs: bytes):
     body = len(raw) - CRC_LEN
     if struct.unpack_from("<I", raw, body)[0] != crc32(raw[:body]):
         return RX_CRC_ERR, None
-    ver, typ, ln, flags, seq, ts = struct.unpack_from("<BBBBII", raw)
+    ver, typ, ln, boot_id, seq, ts = struct.unpack_from("<BBBBII", raw)
     if ver != VERSION or ln != body - HDR_LEN:
         return RX_FRAMING_ERR, None
-    return RX_FRAME, Frame(typ, seq, ts, raw[HDR_LEN:body], flags)
+    return RX_FRAME, Frame(typ, seq, ts, raw[HDR_LEN:body], boot_id)
 
 
 class Receiver:
@@ -153,15 +153,18 @@ class SeqTracker:
 
     def __init__(self):
         self.synced = False
+        self.boot_id = 0
         self.next = 0
 
     def update(self, f: Frame):
         """Returns (frames lost before f, sender reset?)."""
         d = (f.seq - self.next) & U32
         backwards = d >= 0x80000000
-        reset = f.type == TYPE_HELLO or (self.synced and backwards)
+        reset = self.synced and (f.boot_id != self.boot_id or backwards)
+        reset = reset or f.type == TYPE_HELLO
         lost = d if self.synced and not reset else 0
         self.synced = True
+        self.boot_id = f.boot_id
         self.next = (f.seq + 1) & U32
         return lost, reset
 

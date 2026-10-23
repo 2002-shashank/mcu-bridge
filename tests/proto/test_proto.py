@@ -22,13 +22,13 @@ def py_events(stream):
             out.append(NAMES[st])
             continue
         lost, reset = seq.update(f)
-        out.append(f"FRAME {f.type} {f.flags} {f.seq} {f.timestamp_us} "
+        out.append(f"FRAME {f.type} {f.boot_id} {f.seq} {f.timestamp_us} "
                    f"{f.payload.hex() or '-'} {lost} {int(reset)}")
     return out
 
 
-def wire(type=P.TYPE_DATA, seq=0, ts=0, payload=b"", flags=0):
-    return P.frame_encode(P.Frame(type, seq, ts, payload, flags))
+def wire(type=P.TYPE_DATA, seq=0, ts=0, payload=b"", boot_id=1):
+    return P.frame_encode(P.Frame(type, seq, ts, payload, boot_id))
 
 
 def raw_frame(ver, type, ln, body_payload):
@@ -95,7 +95,7 @@ class Python(unittest.TestCase):
                 bad[pos] ^= 1 << bit
                 ev = py_events(bytes(bad) + b)
                 with self.subTest(pos=pos, bit=bit):
-                    self.assertEqual(ev[-1], "FRAME 1 0 2 0 - 0 0")
+                    self.assertEqual(ev[-1], "FRAME 1 1 2 0 - 0 0")
                     self.assertTrue(all(e in ("CRC", "FRAMING") for e in ev[:-1]), ev)
 
     def test_malformed_but_intact_is_framing_error(self):
@@ -120,7 +120,7 @@ class Python(unittest.TestCase):
 
     def test_extra_delimiters_ignored(self):
         self.assertEqual(py_events(b"\x00\x00" + wire(seq=5) + b"\x00\x00"),
-                         ["FRAME 1 0 5 0 - 0 0"])
+                         ["FRAME 1 1 5 0 - 0 0"])
 
     def test_seq_gap_wrap_and_reset(self):
         s = [wire(seq=n) for n in (10, 11, 14, 0xFFFFFFFF, 0, 1, 0)]
@@ -135,6 +135,14 @@ class Python(unittest.TestCase):
             ("0", "0"),
             ("0", "1"),            # backwards: sender restarted, HELLO lost
         ])
+
+    def test_boot_id_change_is_reset_even_with_seq_forward(self):
+        # Replug: HELLO lost during USB enumeration, new boot's seq happens to
+        # be ahead of the old one. Without boot_id this would be "20 dropped".
+        ev = py_events(wire(seq=30, boot_id=7) + wire(seq=51, boot_id=200)
+                       + wire(seq=52, boot_id=200))
+        self.assertEqual([tuple(e.split()[-2:]) for e in ev],
+                         [("0", "0"), ("0", "1"), ("0", "0")])
 
 
 class Conformance(unittest.TestCase):
@@ -174,7 +182,7 @@ class Conformance(unittest.TestCase):
                             for _ in range(rnd.randrange(P.MAX_PAYLOAD + 1)))
             frames.append(P.Frame(rnd.randrange(256), rnd.randrange(2**32),
                                   rnd.randrange(2**32), payload, rnd.randrange(256)))
-        lines = "".join(f"{f.type} {f.flags} {f.seq} {f.timestamp_us} {f.payload.hex() or '-'}\n"
+        lines = "".join(f"{f.type} {f.boot_id} {f.seq} {f.timestamp_us} {f.payload.hex() or '-'}\n"
                         for f in frames)
         got = self.c("encode", lines.encode()).split()
         self.assertEqual(got, [P.frame_encode(f).hex() for f in frames])
@@ -182,7 +190,7 @@ class Conformance(unittest.TestCase):
     def test_decode_identical_on_damaged_streams(self):
         rnd = random.Random(3)
         for trial in range(200):
-            parts, seq = [], rnd.randrange(2**32)
+            parts, seq, boot = [], rnd.randrange(2**32), rnd.randrange(1, 256)
             for _ in range(rnd.randrange(1, 30)):
                 kind = rnd.random()
                 if kind < 0.05:
@@ -190,9 +198,10 @@ class Conformance(unittest.TestCase):
                     continue
                 if kind < 0.08:
                     seq = rnd.randrange(2**32)                              # restart
+                    boot = rnd.choice((boot, rnd.randrange(1, 256)))
                 t = P.TYPE_HELLO if kind < 0.1 else P.TYPE_DATA
                 w = bytearray(wire(t, seq, rnd.randrange(2**32),
-                                   rnd.randbytes(rnd.randrange(P.MAX_PAYLOAD + 1))))
+                                   rnd.randbytes(rnd.randrange(P.MAX_PAYLOAD + 1)), boot))
                 seq = (seq + rnd.choice((1, 1, 1, 1, 2, 5))) & 0xFFFFFFFF   # gaps
                 r = rnd.random()
                 if r < 0.1:

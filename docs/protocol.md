@@ -35,7 +35,7 @@ All multi-byte fields are little-endian.
 | 0        | 1    | `version`      | `1`                                              |
 | 1        | 1    | `type`         | see below                                        |
 | 2        | 1    | `len`          | payload length, 0..64                            |
-| 3        | 1    | `flags`        | reserved, send 0, ignore on receive              |
+| 3        | 1    | `boot_id`      | sender's random 1..255, fixed for one boot       |
 | 4        | 4    | `seq`          | per-direction counter, +1 per frame, wraps at 2³² |
 | 8        | 4    | `timestamp_us` | sender's monotonic clock in µs, wraps every ~71.6 min |
 | 12       | len  | `payload`      |                                                  |
@@ -62,7 +62,10 @@ Timestamps are only ever compared by unsigned subtraction
 | `0x12` | SET_RATE | host → ESP32 | `u16 rate_hz`, 1..200                                       |
 | `0x13` | ACK      | ESP32 → host | `u32 req_seq`, `u8 req_type`, `u8 status`                   |
 
-- HELLO is the first frame after every ESP32 boot.
+- HELLO is the first frame after every ESP32 boot. The host must not rely on
+  seeing it: after a USB replug the board boots while the host's serial port
+  is still enumerating, so its ROM log and HELLO are lost. `boot_id` is what
+  makes such a reboot detectable.
 - Every host command gets exactly one response: PING gets PONG; anything else
   gets ACK. `req_seq` is the `seq` of the command answered, so responses can be
   matched to requests even when one is lost.
@@ -85,16 +88,20 @@ header, payload or CRC is reported as a CRC error. Framing errors are frames
 that are structurally broken: corruption of COBS overhead bytes, or a sender
 producing malformed frames (bug, version mismatch).
 
-Sequence tracking (per direction), with `d = (int32_t)(seq - expected)`:
+Sequence tracking (per direction), with `d = (int32_t)(seq - expected)`,
+first matching row wins:
 
-| Condition                     | Result                                 |
-|-------------------------------|----------------------------------------|
-| first frame                   | sync, nothing counted                  |
-| `type == HELLO`               | **reset** (sender restarted), resync   |
-| `d < 0`                       | **reset** (seq went back: HELLO lost)  |
-| `d >= 0`                      | **`d` frames dropped**                 |
+| Condition                     | Result                                         |
+|-------------------------------|------------------------------------------------|
+| first frame                   | sync, nothing counted (reset if HELLO)         |
+| `boot_id` changed             | **reset**: sender rebooted, even if HELLO lost |
+| `type == HELLO`               | **reset**                                      |
+| `d < 0`                       | **reset**: seq went back (boot_id repeated by chance, 1 in 255) |
+| `d >= 0`                      | **`d` frames dropped**                         |
 
-`expected` becomes `seq + 1` after every accepted frame.
+`expected` becomes `seq + 1` and the stored `boot_id` is updated after every
+accepted frame. Without `boot_id`, a reboot whose new `seq` happens to be ahead
+of the old one would be miscounted as dropped frames.
 
 ## Driver counters
 

@@ -4,9 +4,9 @@
  * implementation by tests/proto/test_proto.py.
  *
  *   conformance crc      stdin bytes -> "%08x\n"
- *   conformance encode   lines "type flags seq ts payloadhex|-" -> wire hex per line
+ *   conformance encode   lines "type boot_id seq ts payloadhex|-" -> wire hex per line
  *   conformance decode   stdin byte stream -> one line per receiver event:
- *                        FRAME type flags seq ts payloadhex|- lost reset
+ *                        FRAME type boot_id seq ts payloadhex|- lost reset
  *                        CRC | FRAMING | OVERRUN
  */
 #include <stdio.h>
@@ -52,7 +52,7 @@ static void print_hex(const uint8_t *p, size_t n)
 static int do_encode(void)
 {
 	char line[512], hex[256];
-	unsigned int type, flags;
+	unsigned int type, boot_id;
 	unsigned long seq, ts;
 
 	while (fgets(line, sizeof(line), stdin)) {
@@ -60,10 +60,10 @@ static int do_encode(void)
 		uint8_t wire[MCB_MAX_WIRE];
 		int n;
 
-		if (sscanf(line, "%u %u %lu %lu %255s", &type, &flags, &seq, &ts, hex) != 5)
+		if (sscanf(line, "%u %u %lu %lu %255s", &type, &boot_id, &seq, &ts, hex) != 5)
 			return 1;
 		f.type = type;
-		f.flags = flags;
+		f.boot_id = boot_id;
 		f.seq = seq;
 		f.timestamp_us = ts;
 		if (strcmp(hex, "-")) {
@@ -109,7 +109,7 @@ static int do_decode(void)
 			continue;
 		}
 		lost = mcb_seq_update(&seq, &f, &reset);
-		printf("FRAME %u %u %u %u ", f.type, f.flags, f.seq, f.timestamp_us);
+		printf("FRAME %u %u %u %u ", f.type, f.boot_id, f.seq, f.timestamp_us);
 		print_hex(f.payload, f.len);
 		printf(" %u %d\n", lost, reset);
 	}
