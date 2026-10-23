@@ -127,7 +127,7 @@ def main():
               f"rx_frames={c['rx_frames']}")
 
         print("kernel log")
-        bad = g.run("dmesg | grep -E 'BUG|WARNING|Oops|lockdep|refcount' || true")
+        bad = g.run("dmesg | grep -E 'BUG:|WARNING:|Oops|refcount_t:' || true")
         check("no BUG/WARNING/Oops in dmesg", not bad, bad[:300])
     finally:
         s.stop()

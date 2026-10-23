@@ -4,6 +4,8 @@
 #   scripts/build.sh            fetch pinned Buildroot if needed, configure, build
 #   scripts/build.sh <target>   pass a make target through (menuconfig, linux-rebuild, ...)
 #
+#   VARIANT=debug scripts/build.sh   lockdep/KASAN kernel, own output dir, images to out/debug
+#
 # Overridable: WORK (build root, must be on a case-sensitive Linux fs), BR2_DL_DIR.
 set -euo pipefail
 
@@ -14,7 +16,9 @@ DEFCONFIG=mcu_bridge_qemu_aarch64_defconfig
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="${WORK:-$HOME/build}"
 BR_DIR="$WORK/buildroot-$BR_VERSION"
-OUT="$WORK/qemu-aarch64"
+VARIANT="${VARIANT:-}"
+OUT="$WORK/qemu-aarch64${VARIANT:+-$VARIANT}"
+IMAGES_OUT="$REPO/out${VARIANT:+/$VARIANT}"
 export BR2_DL_DIR="${BR2_DL_DIR:-$HOME/br-dl}"
 
 mkdir -p "$WORK" "$BR2_DL_DIR"
@@ -35,8 +39,27 @@ fi
 
 # Re-apply the defconfig every time so the committed file is the single source of truth.
 br_make "$DEFCONFIG"
+if [ "$VARIANT" = debug ]; then
+    frag='$(BR2_EXTERNAL_MCU_BRIDGE_PATH)/board/qemu-aarch64'
+    sed -i "s|^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=.*|BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=\"$frag/linux.fragment $frag/linux-debug.fragment\"|" "$OUT/.config"
+    br_make olddefconfig
+fi
 br_make
 
-mkdir -p "$REPO/out"
-cp "$OUT/images/Image" "$OUT/images/rootfs.ext2" "$REPO/out/"
-echo "images copied to $REPO/out"
+# Kconfig silently drops symbols whose dependencies are unmet: check that every
+# option our fragments request made it into the kernel's final .config.
+kconfig="$(ls -d "$OUT"/build/linux-[0-9]*)/.config"
+frags=("$REPO/br2-external/board/qemu-aarch64/linux.fragment")
+[ "$VARIANT" = debug ] && frags+=("$REPO/br2-external/board/qemu-aarch64/linux-debug.fragment")
+missing=$(grep -hE '^CONFIG_[A-Z0-9_]+=' "${frags[@]}" | while read -r want; do
+    grep -qxF "$want" "$kconfig" || echo "  $want"
+done)
+if [ -n "$missing" ]; then
+    echo "ERROR: kernel config fragment options not in $kconfig (unmet dependencies?):"
+    echo "$missing"
+    exit 1
+fi
+
+mkdir -p "$IMAGES_OUT"
+cp "$OUT/images/Image" "$OUT/images/rootfs.ext2" "$IMAGES_OUT/"
+echo "images copied to $IMAGES_OUT"

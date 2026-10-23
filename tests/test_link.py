@@ -14,7 +14,7 @@ bridge reopens the port while QEMU keeps running).
 import argparse, json, os, signal, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from harness import ROOT, Proc, check, finish
+from harness import ROOT, Proc, check, esp32_socket, finish, sim as start_sim
 from qemu_guest import Guest
 import mcb_proto as P
 
@@ -48,7 +48,7 @@ def events_after_hello(stream):
 
 
 def test_sim(g):
-    sim = Proc([os.path.join(ROOT, "scripts", "esp32-sim.py"), "--rate", "50"], "stdout")
+    sim = start_sim(rate=50)
     try:
         check("simulator connected", sim.wait_for(lambda l: '"ready"' in l, 10))
 
@@ -96,7 +96,8 @@ def test_sim(g):
 
 
 def test_real(g, unplug):
-    bridge = Proc([os.path.join(ROOT, "scripts", "esp32-bridge.py")], "stderr")
+    bridge = Proc([os.path.join(ROOT, "scripts", "esp32-bridge.py"), "--socket", esp32_socket()],
+                  "stderr")
     bridge.log_to(os.path.join(ROOT, "out", "bridge.log"))
     try:
         check("bridge connected to ESP32 and QEMU",

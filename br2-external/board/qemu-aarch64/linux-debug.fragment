@@ -1,0 +1,12 @@
+# Debug variant (scripts/build.sh VARIANT=debug): turn silent driver bugs into
+# loud reports. Much slower; never for production images.
+# parent of most debug options; without it Kconfig silently drops them
+CONFIG_DEBUG_KERNEL=y
+# lockdep: every observed lock acquisition, reports possible deadlocks
+CONFIG_PROVE_LOCKING=y
+# sleeping calls (mutex, serdev_device_write, ...) while holding a spinlock
+CONFIG_DEBUG_ATOMIC_SLEEP=y
+# out-of-bounds and use-after-free on every memory access
+CONFIG_KASAN=y
+CONFIG_KASAN_GENERIC=y
+CONFIG_DEBUG_LIST=y

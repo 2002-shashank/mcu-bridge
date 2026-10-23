@@ -69,5 +69,12 @@ class Proc:
         self.wait_for(lambda l: False, 0.2)  # drain remaining lines into the log
 
 
+def esp32_socket():
+    """Same default as scripts/run-qemu.sh: ESP32_SOCK, else $IMAGES/esp32.sock."""
+    images = os.environ.get("IMAGES", os.path.join(ROOT, "out"))
+    return os.environ.get("ESP32_SOCK", os.path.join(images, "esp32.sock"))
+
+
 def sim(rate=50):
-    return Proc([os.path.join(ROOT, "scripts", "esp32-sim.py"), "--rate", str(rate)], "stdout")
+    return Proc([os.path.join(ROOT, "scripts", "esp32-sim.py"), "--rate", str(rate),
+                 "--socket", esp32_socket()], "stdout")
