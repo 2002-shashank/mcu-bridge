@@ -1,0 +1,2 @@
+name: MCU_BRIDGE
+desc: mcu-bridge: ESP32 <-> Linux serdev bridge for QEMU aarch64

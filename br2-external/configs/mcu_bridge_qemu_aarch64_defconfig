@@ -1,0 +1,33 @@
+# Architecture: Cortex-A53, matches `-cpu cortex-a53` in scripts/run-qemu.sh
+BR2_aarch64=y
+BR2_cortex_a53=y
+
+# Toolchain: prebuilt Arm GNU Toolchain 14.2.rel1 (glibc), hash-checked by Buildroot.
+# Not Bootlin: those only run on x86_64 hosts, and the Lima build VM is aarch64.
+# Arm ships it for both, so the VM and x86_64 CI runners use the same GCC.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_ARM_AARCH64=y
+
+# Every download must match a known sha256 (kernel hash lives in our patch dir)
+BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_MCU_BRIDGE_PATH)/board/qemu-aarch64/patches"
+BR2_DOWNLOAD_FORCE_CHECK_HASHES=y
+
+# System
+BR2_TARGET_GENERIC_HOSTNAME="mcu-bridge"
+BR2_TARGET_GENERIC_ISSUE="mcu-bridge"
+BR2_TARGET_GENERIC_GETTY_PORT="ttyAMA0"
+
+# Kernel: pinned LTS 6.18.7, Buildroot's tested qemu config + our fragment
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION=y
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.18.7"
+BR2_LINUX_KERNEL_USE_CUSTOM_CONFIG=y
+BR2_LINUX_KERNEL_CUSTOM_CONFIG_FILE="board/qemu/aarch64-virt/linux.config"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_MCU_BRIDGE_PATH)/board/qemu-aarch64/linux.fragment"
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+
+# Root filesystem
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="64M"
+# BR2_TARGET_ROOTFS_TAR is not set
