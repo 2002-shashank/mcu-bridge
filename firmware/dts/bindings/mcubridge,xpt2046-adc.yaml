@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+description: |
+  XPT2046 resistive-touch controller read over raw SPI by the mcu-bridge
+  firmware (touch position and pressure). Separate from Zephyr's
+  "xptek,xpt2046" input driver, which would otherwise claim the chip.
+
+compatible: "mcubridge,xpt2046-adc"
+
+include: spi-device.yaml

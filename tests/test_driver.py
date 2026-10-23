@@ -1,14 +1,15 @@
 #!/usr/bin/python3
 """Driver test: guest with the DT overlay (mcb_bridge binds via coldplug) talking
-to the simulated ESP32.
+to the simulated ESP32, or with --real to the ESP32 firmware through the bridge
+(simulator-only fault injections are skipped).
 
 Counter checks use deltas around one injected fault and require the exact
 change in every counter, including zero for the ones that must not move.
 """
-import os, sys, time
+import argparse, os, signal, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from harness import check, finish, sim
+from harness import ROOT, Proc, check, esp32_socket, finish, sim
 from qemu_guest import Guest
 
 DEV = "/sys/bus/serial/devices/serial0-0"
@@ -49,11 +50,23 @@ def expect_delta(name, d, **want):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--real", action="store_true", help="real ESP32 via scripts/esp32-bridge.py")
+    real = ap.parse_args().real
+
     g = Guest()
-    s = sim(rate=50)
+    if real:
+        s = Proc([os.path.join(ROOT, "scripts", "esp32-bridge.py"), "--socket", esp32_socket()],
+                 "stderr")
+        s.log_to(os.path.join(ROOT, "out", "bridge.log"))
+    else:
+        s = sim(rate=50)
     try:
         g.login()
         drv = Driver(g)
+        if real:
+            check("bridge connected", s.wait_for(lambda l: "QEMU connected" in l, 10))
+            time.sleep(1)
 
         print("binding")
         check("driver bound via modalias coldplug",
@@ -74,19 +87,10 @@ def main():
         time.sleep(0.2)
         check("sample_seq advances", int(drv.read("sample_seq")) > seq1)
 
-        print("fault injection (exact counter deltas)")
-        expect_delta("corrupt 5", delta_after(drv, lambda: s.send("corrupt 5")),
-                     crc_errors=5, dropped_frames=5)
-        expect_delta("drop 7", delta_after(drv, lambda: s.send("drop 7")), dropped_frames=7)
-        expect_delta("garbage 200", delta_after(drv, lambda: s.send("garbage 200")),
-                     overruns=1, dropped_frames=1)
-        expect_delta("reset", delta_after(drv, lambda: s.send("reset")), resets=1, overruns=1)
-        check("HELLO: fw_version", drv.read("fw_version") == "0.1.0", drv.read("fw_version"))
-        check("HELLO: rate", drv.read("rate") == "50", drv.read("rate"))
-        s.drain()
-        expect_delta("unplug 1 (HELLO lost, boot_id)", delta_after(
-            drv, lambda: (s.send("unplug 1"), s.wait_for(lambda l: '"ready"' in l, 10)),
-            settle=0.5), resets=1)
+        if real:
+            real_board_checks(drv, s)
+        else:
+            sim_fault_checks(drv, s)
 
         print("commands")
         check("ping", drv.write("ping", 1) == "")
@@ -101,30 +105,12 @@ def main():
         check("rate 0 rejected locally", "Invalid argument" in drv.write("rate", 0))
         check("rate 500 rejected locally", "Invalid argument" in drv.write("rate", 500))
 
-        print("link loss")
-        s.drain()
-        s.send("unplug 5")
-        time.sleep(3.6)
-        check("link_up drops after 3 s of silence", drv.read("link_up") == "0")
-        t = time.monotonic()
-        err = drv.write("ping", 1)
-        check("ping times out while unplugged", "timed out" in err, f"{err!r} in {time.monotonic() - t:.2f}s")
-        s.wait_for(lambda l: '"ready"' in l, 10)
-        time.sleep(0.5)
-        check("link_up again after replug", drv.read("link_up") == "1")
+        if real:
+            check("rate back to 50", drv.write("rate", 50) == "")
+        else:
+            link_loss_checks(drv, s)
 
-        print("module unload / reload under load")
-        out = g.run("rmmod mcb_bridge; echo rc=$?")
-        check("rmmod while streaming", out.endswith("rc=0"), out)
-        check("unbound", "No such file" in g.run(f"ls {DEV}/driver 2>&1"))
-        check("remove() logged stats", "removed:" in g.run("dmesg | grep mcb_bridge | tail -1"))
-        out = g.run("modprobe mcb_bridge; echo rc=$?")
-        check("modprobe", out.endswith("rc=0"), out)
-        time.sleep(1)
-        c = drv.counters()
-        # the unplug rebooted the sim, so it is back at its boot rate of 50 Hz
-        check("rebound with fresh counters, data flowing", 30 <= c["rx_frames"] <= 70,
-              f"rx_frames={c['rx_frames']}")
+        module_reload_checks(g, drv)
 
         print("kernel log")
         bad = g.run("dmesg | grep -E 'BUG:|WARNING:|Oops|refcount_t:' || true")
@@ -133,6 +119,68 @@ def main():
         s.stop()
         g.close()
     finish()
+
+
+def real_board_checks(drv, bridge):
+    print("real board")
+    d = delta_after(drv, lambda: (bridge.drain(), bridge.p.send_signal(signal.SIGUSR1),
+                                  bridge.wait_for(lambda l: "reset pulsed" in l, 5)), settle=1.5)
+    expect_delta("reset pulse: ROM text + HELLO", d, resets=1, overruns=1)
+    check("HELLO: fw_version 1.0.0 (real firmware)", drv.read("fw_version") == "1.0.0",
+          drv.read("fw_version"))
+    check("HELLO: rate 50", drv.read("rate") == "50", drv.read("rate"))
+    ch = drv.read("channels").split()
+    check("untouched channels: touched=0 x=-1 y=-1 pressure=0", ch == ["0", "-1", "-1", "0"], " ".join(ch))
+    c0 = drv.counters()
+    time.sleep(3)
+    d = {k: v - c0[k] for k, v in drv.counters().items()}
+    check("3 s at 50 Hz with no errors or drops",
+          140 <= d["rx_frames"] <= 160 and not any(v for k, v in d.items() if k != "rx_frames"), str(d))
+
+
+def sim_fault_checks(drv, s):
+    print("fault injection (exact counter deltas)")
+    expect_delta("corrupt 5", delta_after(drv, lambda: s.send("corrupt 5")),
+                 crc_errors=5, dropped_frames=5)
+    expect_delta("drop 7", delta_after(drv, lambda: s.send("drop 7")), dropped_frames=7)
+    expect_delta("garbage 200", delta_after(drv, lambda: s.send("garbage 200")),
+                 overruns=1, dropped_frames=1)
+    expect_delta("reset", delta_after(drv, lambda: s.send("reset")), resets=1, overruns=1)
+    check("HELLO: fw_version", drv.read("fw_version") == "0.1.0", drv.read("fw_version"))
+    check("HELLO: rate", drv.read("rate") == "50", drv.read("rate"))
+    s.drain()
+    expect_delta("unplug 1 (HELLO lost, boot_id)", delta_after(
+        drv, lambda: (s.send("unplug 1"), s.wait_for(lambda l: '"ready"' in l, 10)),
+        settle=0.5), resets=1)
+
+
+def link_loss_checks(drv, s):
+    print("link loss")
+    s.drain()
+    s.send("unplug 5")
+    time.sleep(3.6)
+    check("link_up drops after 3 s of silence", drv.read("link_up") == "0")
+    t = time.monotonic()
+    err = drv.write("ping", 1)
+    check("ping times out while unplugged", "timed out" in err, f"{err!r} in {time.monotonic() - t:.2f}s")
+    s.wait_for(lambda l: '"ready"' in l, 10)
+    time.sleep(0.5)
+    check("link_up again after replug", drv.read("link_up") == "1")
+
+
+def module_reload_checks(g, drv):
+    print("module unload / reload under load")
+    out = g.run("rmmod mcb_bridge; echo rc=$?")
+    check("rmmod while streaming", out.endswith("rc=0"), out)
+    check("unbound", "No such file" in g.run(f"ls {DEV}/driver 2>&1"))
+    check("remove() logged stats", "removed:" in g.run("dmesg | grep mcb_bridge | tail -1"))
+    out = g.run("modprobe mcb_bridge; echo rc=$?")
+    check("modprobe", out.endswith("rc=0"), out)
+    time.sleep(1)
+    c = drv.counters()
+    # rate is 50 again: the sim rebooted on unplug, the real board was set back
+    check("rebound with fresh counters, data flowing", 30 <= c["rx_frames"] <= 70,
+          f"rx_frames={c['rx_frames']}")
 
 
 if __name__ == "__main__":

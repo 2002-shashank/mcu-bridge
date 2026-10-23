@@ -132,9 +132,16 @@ class Sim:
         return P.cobs_encode(bytes(raw)) + b"\x00"
 
     def tick(self):
+        # Same channels as the firmware: touched, x, y, pressure. A virtual
+        # finger presses for 1 s in every 4 and slides across the panel.
         t = time.monotonic() - self.t_boot
-        light_mv = int(1650 + 1200 * math.sin(2 * math.pi * 0.2 * t))
-        values = [light_mv, self.seq & 0xFFFF, int(t * 1000), -1][:self.channels]
+        phase = t % 4.0
+        if phase < 1.0:
+            values = [1, int(300 + 3400 * phase), int(2000 + 1200 * math.sin(2 * math.pi * phase)),
+                      600]
+        else:
+            values = [0, -1, -1, 0]
+        values = values[:self.channels]
         self.send_frame(P.TYPE_DATA, P.data_payload(values))
         self.stats["data_sent"] += 1
         self.next_tick += 1 / self.rate

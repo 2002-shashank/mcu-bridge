@@ -1,0 +1,49 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Sunton ESP32-3248S035R ("CYD" 3.5", resistive touch) on top of the generic
+ * esp32_devkitc board: same ESP32-D0WD-V3 module, board-specific wiring here.
+ */
+
+/ {
+	chosen {
+		mcb,uart = &uart0;		/* USB-serial chip: the mcu-bridge link */
+		zephyr,entropy = &trng0;	/* boot_id */
+	};
+};
+
+&trng0 {
+	status = "okay";
+};
+
+/* Display and touch share HSPI: SCK 14, MOSI 13, MISO 12 */
+&pinctrl {
+	spim2_cyd: spim2_cyd {
+		group1 {
+			pinmux = <SPIM2_MISO_GPIO12>, <SPIM2_SCLK_GPIO14>;
+		};
+		group2 {
+			pinmux = <SPIM2_MOSI_GPIO13>;
+			output-low;
+		};
+	};
+};
+
+&spi2 {
+	pinctrl-0 = <&spim2_cyd>;
+	cs-gpios = <&gpio1 1 GPIO_ACTIVE_LOW>;	/* GPIO33: XPT2046 CS */
+
+	xpt: touch@0 {
+		compatible = "mcubridge,xpt2046-adc";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+	};
+};
+
+&gpio0 {
+	/* GPIO15: ST7796 display CS, held inactive so only the XPT2046 drives MISO */
+	display_cs {
+		gpio-hog;
+		gpios = <15 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+};

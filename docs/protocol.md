@@ -55,13 +55,20 @@ Timestamps are only ever compared by unsigned subtraction
 
 | Type   | Name     | Direction    | Payload                                                     |
 |--------|----------|--------------|-------------------------------------------------------------|
-| `0x01` | DATA     | ESP32 → host | `n` × `s32` channel values, `n = len / 4`, 1..16; ch0 = light sensor in mV |
+| `0x01` | DATA     | ESP32 → host | `n` × `s32` channel values, `n = len / 4`, 1..16 (see below) |
 | `0x02` | HELLO    | ESP32 → host | `u8 proto_version`, `u8 reserved`, `u16 rate_hz`, `u32 fw_version` |
 | `0x10` | PING     | host → ESP32 | 0..8 byte opaque token                                      |
 | `0x11` | PONG     | ESP32 → host | `u32 req_seq`, then the PING token echoed                   |
 | `0x12` | SET_RATE | host → ESP32 | `u16 rate_hz`, 1..200                                       |
 | `0x13` | ACK      | ESP32 → host | `u32 req_seq`, `u8 req_type`, `u8 status`                   |
 
+- DATA channels from the ESP32-3248S035R firmware (XPT2046 resistive touch,
+  raw 12-bit ADC coordinates, not calibrated to pixels):
+  `touched` (0/1), `x`, `y` (-1 when not touched), `pressure` (Z1, 0 when not
+  touched). The board's CdS light sensor on GPIO34 was measured flat
+  (~2045 mV in darkness, room light and flashlight), and the XPT2046's
+  temperature channels could not be calibrated (VBAT/AUX grounded), so neither
+  is used.
 - HELLO is the first frame after every ESP32 boot. The host must not rely on
   seeing it: after a USB replug the board boots while the host's serial port
   is still enumerating, so its ROM log and HELLO are lost. `boot_id` is what
