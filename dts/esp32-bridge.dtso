@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * ESP32 on the QEMU virt board's second PL011 (guest ttyAMA1).
+ *
+ * QEMU generates the virt DTB at runtime without __symbols__, so the
+ * overlay targets the UART by path instead of by label.
+ */
+/dts-v1/;
+/plugin/;
+
+&{/pl011@9040000} {
+	mcu {
+		compatible = "mcubridge,esp32";
+		current-speed = <115200>;
+	};
+};

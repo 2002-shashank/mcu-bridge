@@ -10,55 +10,11 @@ Per boot, host-side timestamps (seconds since QEMU was launched) for:
 plus kernel_init, the kernel's own printk timestamp of the init handoff.
 Medians over all runs are reported because emulated boot times jitter.
 """
-import argparse, os, re, select, statistics, subprocess, sys, time
+import argparse, os, statistics
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-RUN_QEMU = os.path.join(REPO, "scripts", "run-qemu.sh")
+from qemu_guest import REPO, Guest
+
 IMAGES = os.environ.get("IMAGES", os.path.join(REPO, "out"))
-
-
-class Guest:
-    def __init__(self):
-        self.t0 = time.monotonic()
-        self.p = subprocess.Popen([RUN_QEMU], stdin=subprocess.PIPE,
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        self.buf = b""
-        self.first_byte = None
-
-    def expect(self, pattern, timeout=120):
-        """Read console until regex `pattern` matches; return (match, host time)."""
-        rx = re.compile(pattern)
-        end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            m = rx.search(self.buf)
-            if m:
-                self.buf = self.buf[m.end():]
-                return m, time.monotonic() - self.t0
-            r, _, _ = select.select([self.p.stdout], [], [], 0.5)
-            if r:
-                chunk = os.read(self.p.stdout.fileno(), 4096)
-                if not chunk:
-                    break
-                if self.first_byte is None:
-                    self.first_byte = time.monotonic() - self.t0
-                self.buf += chunk
-        sys.exit(f"timeout waiting for {pattern!r}; console tail:\n"
-                 + self.buf[-1500:].decode(errors="replace"))
-
-    def send(self, data):
-        self.p.stdin.write(data)
-        self.p.stdin.flush()
-
-    def run(self, cmd):
-        # The quotes keep the echoed command line from matching the marker.
-        self.send(cmd.encode() + b'; echo __E""ND__\n')
-        m, _ = self.expect(rb"(?s)(.*?)__END__\r?\n", 30)
-        lines = m.group(1).decode(errors="replace").splitlines()
-        return "\n".join(lines[1:]).strip()  # drop the echoed command
-
-    def close(self):
-        self.p.kill()
-        self.p.wait()
 
 
 def boot_once(want_df):
@@ -68,8 +24,7 @@ def boot_once(want_df):
     _, t_login = g.expect(rb"login: ")
     df = None
     if want_df:
-        g.send(b"root\n")
-        g.expect(rb"# ")
+        g.login(at_prompt=True)
         df = g.run("df -k / | tail -1")
     g.close()
     return dict(first_byte=g.first_byte, kernel_init=kernel_init, init=t_init, login=t_login), df

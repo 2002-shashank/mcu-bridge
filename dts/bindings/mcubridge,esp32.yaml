@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/mcubridge,esp32.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: mcu-bridge ESP32 link over UART
+
+maintainers:
+  - Shashank <smshashanksm@gmail.com>
+
+description: |
+  An ESP32 running the mcu-bridge Zephyr firmware, attached to a UART. It
+  streams CRC-32 framed samples and answers commands (ping, set rate).
+  The node must be a child of the UART it is wired to; the serdev core then
+  hands that UART to the driver instead of creating a tty device.
+
+allOf:
+  - $ref: /schemas/serial/serial-peripheral-props.yaml#
+
+properties:
+  compatible:
+    const: mcubridge,esp32
+
+  current-speed:
+    description: Line rate configured in the ESP32 firmware.
+    default: 115200
+
+required:
+  - compatible
+
+unevaluatedProperties: false
+
+examples:
+  - |
+    serial {
+        mcu {
+            compatible = "mcubridge,esp32";
+            current-speed = <115200>;
+        };
+    };
