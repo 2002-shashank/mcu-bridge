@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Boot the image in QEMU (native on macOS so the guest can reach the USB serial port).
 #
-#   scripts/run-qemu.sh                                  ESP32 UART (guest ttyAMA1) unconnected
-#   ESP32=/dev/cu.usbserial-110 scripts/run-qemu.sh      ESP32 UART on a host tty
+#   scripts/run-qemu.sh
 #
+# The guest's ESP32 UART (ttyAMA1) is a Unix socket server at ESP32_SOCK
+# (default out/esp32.sock). Connect scripts/esp32-bridge.py (real ESP32) or
+# scripts/esp32-sim.py (simulator); with no client it behaves like an
+# unplugged cable, and a new client can connect at any time.
+#
+#   ESP32_TTY=/dev/cu.usbserial-110  open the host tty directly instead (no unplug recovery)
 #   ACCEL=hvf        Apple Hypervisor.framework (default tcg = software emulation, same as CI)
 #   SNAPSHOT=off     persist rootfs writes (default on: every boot starts clean)
 #   IMAGES=dir       where Image and rootfs.ext2 are (default out/)
@@ -24,10 +29,12 @@ if [ "$ACCEL" = hvf ]; then cpu=host; else cpu=cortex-a53; fi
 # for QEMU to create the second PL011 (0x9040000, guest ttyAMA1).
 machine=(-accel "$ACCEL" -cpu "$cpu" -smp 2 -m 256 -display none)
 
-if [ -n "${ESP32:-}" ]; then
-    esp=(-chardev "serial,id=esp,path=$ESP32" -serial chardev:esp)
+if [ -n "${ESP32_TTY:-}" ]; then
+    esp=(-chardev "serial,id=esp,path=$ESP32_TTY" -serial chardev:esp)
 else
-    esp=(-serial null)
+    sock="${ESP32_SOCK:-$IMAGES/esp32.sock}"
+    rm -f "$sock"
+    esp=(-chardev "socket,id=esp,path=$sock,server=on,wait=off" -serial chardev:esp)
 fi
 
 dtb=()
