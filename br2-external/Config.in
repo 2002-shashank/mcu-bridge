@@ -1,1 +1,1 @@
-# Project packages (driver module, daemon) are added here in later steps.
+source "$BR2_EXTERNAL_MCU_BRIDGE_PATH/package/mcb-bridge/Config.in"

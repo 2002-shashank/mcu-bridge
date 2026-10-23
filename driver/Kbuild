@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# MCB_PROTO_DIR: protocol/ in the repo; the Buildroot package passes it
+# explicitly because it builds from a copy of driver/.
+MCB_PROTO_DIR ?= $(src)/../protocol
+ccflags-y += -I$(MCB_PROTO_DIR)
+
+obj-m += mcb_bridge.o

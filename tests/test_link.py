@@ -11,60 +11,12 @@ as a fresh boot. Real ESP32 (no mcu-bridge firmware yet): its ROM boot log
 reaches the guest after a reset pulse, and again after an unplug/replug (the
 bridge reopens the port while QEMU keeps running).
 """
-import argparse, json, os, queue, signal, subprocess, sys, threading, time
+import argparse, json, os, signal, sys, time
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, os.path.join(ROOT, "scripts"))
-sys.path.insert(0, os.path.join(ROOT, "protocol"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harness import ROOT, Proc, check, finish
 from qemu_guest import Guest
 import mcb_proto as P
-
-ok = True
-
-
-def check(name, cond, detail=""):
-    global ok
-    ok &= bool(cond)
-    print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f": {detail}" if detail else ""), flush=True)
-
-
-class Proc:
-    """Child process whose stdout (sim: JSON) or stderr (bridge: log) lines are queued."""
-
-    def __init__(self, argv, stream):
-        self.p = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE, text=True)
-        self.lines = queue.Queue()
-        out = self.p.stdout if stream == "stdout" else self.p.stderr
-        threading.Thread(target=lambda: [self.lines.put(l.rstrip()) for l in out], daemon=True).start()
-
-    def log_to(self, path):
-        self.log_path = path
-        open(path, "w").close()
-
-    def wait_for(self, pred, timeout):
-        end = time.monotonic() + timeout
-        while time.monotonic() < end:
-            try:
-                line = self.lines.get(timeout=max(0, end - time.monotonic()))
-            except queue.Empty:
-                break
-            if getattr(self, "log_path", None):
-                with open(self.log_path, "a") as f:
-                    f.write(line + "\n")
-            if pred(line):
-                return line
-        return None
-
-    def send(self, line):
-        self.p.stdin.write(line + "\n")
-        self.p.stdin.flush()
-
-    def stop(self):
-        self.p.kill()
-        self.p.wait()
-        time.sleep(0.1)
-        self.wait_for(lambda l: False, 0.2)  # drain remaining lines into the log
 
 
 def capture_start(g):
@@ -192,8 +144,7 @@ def main():
         (test_real(g, args.unplug) if args.real else test_sim(g))
     finally:
         g.close()
-    print("RESULT:", "PASS" if ok else "FAIL")
-    sys.exit(0 if ok else 1)
+    finish()
 
 
 if __name__ == "__main__":

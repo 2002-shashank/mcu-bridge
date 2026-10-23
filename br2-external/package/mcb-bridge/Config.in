@@ -1,0 +1,9 @@
+config BR2_PACKAGE_MCB_BRIDGE
+	bool "mcb-bridge"
+	depends on BR2_LINUX_KERNEL
+	help
+	  serdev driver for the mcu-bridge ESP32 link (driver/ in the
+	  mcu-bridge repository).
+
+comment "mcb-bridge needs a Linux kernel to be built"
+	depends on !BR2_LINUX_KERNEL

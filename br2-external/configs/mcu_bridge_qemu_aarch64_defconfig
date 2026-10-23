@@ -16,6 +16,9 @@ BR2_DOWNLOAD_FORCE_CHECK_HASHES=y
 BR2_TARGET_GENERIC_HOSTNAME="mcu-bridge"
 BR2_TARGET_GENERIC_ISSUE="mcu-bridge"
 BR2_TARGET_GENERIC_GETTY_PORT="ttyAMA0"
+# mdev, not plain devtmpfs: it runs modprobe for device modaliases (hotplug and
+# coldplug at boot), which is what loads mcb_bridge for the DT node
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
 
 # Kernel: pinned LTS 6.18.7, Buildroot's tested qemu config + our fragment
 BR2_LINUX_KERNEL=y
@@ -31,3 +34,6 @@ BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_SIZE="64M"
 # BR2_TARGET_ROOTFS_TAR is not set
+
+# Project packages
+BR2_PACKAGE_MCB_BRIDGE=y

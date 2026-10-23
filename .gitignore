@@ -1,2 +1,11 @@
 out/
 __pycache__/
+# local out-of-tree driver builds
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+modules.order
+Module.symvers
+.DS_Store
