@@ -4,6 +4,12 @@
  * a UART (docs/protocol.md). Exposes the latest sample, link counters and
  * PING/SET_RATE commands through sysfs.
  *
+ * sysfs holds the latest sample only; readers poll() the "sample" attribute and
+ * get one consistent snapshot including its CLOCK_MONOTONIC receive time, so
+ * user space decides how old is too old. "link_up" is notified on both edges:
+ * a delayed work item, pushed back by every valid frame, fires after
+ * MCB_LINK_TIMEOUT of silence (sysfs_notify() can sleep, so not a timer).
+ *
  * Locking: receive_buf() runs from the tty flip-buffer work item (process
  * context) and is serialized by the tty port, so the frame parser (rx, seq)
  * is only touched there. @lock protects everything sysfs reads (counters,
@@ -24,6 +30,7 @@
 #include <linux/serdev.h>
 #include <linux/spinlock.h>
 #include <linux/sysfs.h>
+#include <linux/workqueue.h>
 
 #include "mcb_proto.h"
 
@@ -54,10 +61,14 @@ struct mcb_dev {
 	unsigned int nchannels;
 	u32 sample_seq;
 	u32 sample_ts;
+	u8 sample_boot_id;
+	u64 sample_rx_ns;		/* ktime_get_ns() at receipt */
+	u64 sample_count;		/* DATA frames accepted since probe */
 	u8 peer_boot_id;
 	u32 fw_version;
 	u16 rate_hz;			/* 0: unknown */
 	unsigned long last_rx;		/* jiffies of the last valid frame */
+	bool link_up;			/* cleared by link_work */
 	/* command in flight, matched by req_seq */
 	bool cmd_pending;
 	u32 cmd_seq;
@@ -72,6 +83,8 @@ struct mcb_dev {
 	u32 tx_seq;
 	u8 boot_id;
 	u64 ping_token;
+
+	struct delayed_work link_work;	/* fires after MCB_LINK_TIMEOUT of silence */
 };
 
 u32 mcb_crc32(const u8 *data, size_t len)
@@ -109,9 +122,32 @@ static void mcb_handle_response(struct mcb_dev *mcb, const struct mcb_frame *f)
 	complete(&mcb->cmd_done);
 }
 
+static void mcb_link_work(struct work_struct *work)
+{
+	struct mcb_dev *mcb = container_of(to_delayed_work(work), struct mcb_dev, link_work);
+	bool down;
+
+	spin_lock(&mcb->lock);
+	/* a frame may have arrived while we were queued; it re-armed us */
+	down = mcb->link_up && !time_before(jiffies, mcb->last_rx + MCB_LINK_TIMEOUT);
+	if (down)
+		mcb->link_up = false;
+	spin_unlock(&mcb->lock);
+
+	if (down)
+		sysfs_notify(&mcb->serdev->dev.kobj, NULL, "link_up");
+}
+
+static void mcb_cancel_link_work(void *data)
+{
+	struct mcb_dev *mcb = data;
+
+	cancel_delayed_work_sync(&mcb->link_work);
+}
+
 static void mcb_handle_frame(struct mcb_dev *mcb, const struct mcb_frame *f)
 {
-	bool reset, notify = false;
+	bool reset, came_up, notify = false;
 	unsigned int i;
 	u32 lost;
 
@@ -126,6 +162,8 @@ static void mcb_handle_frame(struct mcb_dev *mcb, const struct mcb_frame *f)
 	}
 	mcb->peer_boot_id = f->boot_id;
 	mcb->last_rx = jiffies;
+	came_up = !mcb->link_up;
+	mcb->link_up = true;
 
 	switch (f->type) {
 	case MCB_TYPE_DATA:
@@ -136,6 +174,9 @@ static void mcb_handle_frame(struct mcb_dev *mcb, const struct mcb_frame *f)
 			mcb->channels[i] = (s32)mcb_get_le32(f->payload + 4 * i);
 		mcb->sample_seq = f->seq;
 		mcb->sample_ts = f->timestamp_us;
+		mcb->sample_boot_id = f->boot_id;
+		mcb->sample_rx_ns = ktime_get_ns();
+		mcb->sample_count++;
 		notify = true;
 		break;
 	case MCB_TYPE_HELLO:
@@ -151,8 +192,13 @@ static void mcb_handle_frame(struct mcb_dev *mcb, const struct mcb_frame *f)
 	}
 	spin_unlock(&mcb->lock);
 
-	if (notify)
+	mod_delayed_work(system_wq, &mcb->link_work, MCB_LINK_TIMEOUT);
+	if (came_up)
+		sysfs_notify(&mcb->serdev->dev.kobj, NULL, "link_up");
+	if (notify) {
 		sysfs_notify(&mcb->serdev->dev.kobj, NULL, "channels");
+		sysfs_notify(&mcb->serdev->dev.kobj, NULL, "sample");
+	}
 }
 
 static size_t mcb_receive_buf(struct serdev_device *serdev, const u8 *buf, size_t count)
@@ -300,6 +346,37 @@ static ssize_t channels_show(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_RO(channels);
 
+/* "boot_id seq timestamp_us rx_ns count v0 v1 ...", one consistent snapshot */
+static ssize_t sample_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mcb_dev *mcb = dev_get_drvdata(dev);
+	s32 ch[MCB_DATA_MAX_CHANNELS];
+	u32 seq, ts;
+	u64 rx_ns, count;
+	unsigned int i, n;
+	ssize_t len;
+	u8 boot_id;
+
+	spin_lock(&mcb->lock);
+	n = mcb->nchannels;
+	memcpy(ch, mcb->channels, sizeof(ch));
+	seq = mcb->sample_seq;
+	ts = mcb->sample_ts;
+	boot_id = mcb->sample_boot_id;
+	rx_ns = mcb->sample_rx_ns;
+	count = mcb->sample_count;
+	spin_unlock(&mcb->lock);
+
+	if (!n)
+		return -ENODATA;
+	len = sysfs_emit(buf, "%u %u %u %llu %llu", boot_id, seq, ts, rx_ns, count);
+	for (i = 0; i < n; i++)
+		len += sysfs_emit_at(buf, len, " %d", ch[i]);
+	len += sysfs_emit_at(buf, len, "\n");
+	return len;
+}
+static DEVICE_ATTR_RO(sample);
+
 #define MCB_U32_ATTR(name, field)					\
 static ssize_t name##_show(struct device *dev,				\
 			   struct device_attribute *attr, char *buf)	\
@@ -336,8 +413,7 @@ static ssize_t link_up_show(struct device *dev, struct device_attribute *attr, c
 	bool up;
 
 	spin_lock(&mcb->lock);
-	up = mcb->stats.rx_frames &&
-	     time_before(jiffies, mcb->last_rx + MCB_LINK_TIMEOUT);
+	up = mcb->link_up;
 	spin_unlock(&mcb->lock);
 	return sysfs_emit(buf, "%d\n", up);
 }
@@ -416,6 +492,7 @@ static struct attribute *mcb_attrs[] = {
 	&dev_attr_dropped_frames.attr,
 	&dev_attr_resets.attr,
 	&dev_attr_channels.attr,
+	&dev_attr_sample.attr,
 	&dev_attr_sample_seq.attr,
 	&dev_attr_sample_timestamp_us.attr,
 	&dev_attr_peer_boot_id.attr,
@@ -447,10 +524,20 @@ static int mcb_probe(struct serdev_device *serdev)
 	init_completion(&mcb->cmd_done);
 	mcb->ping_rtt_ns = -1;
 	mcb->boot_id = get_random_u32_inclusive(1, 255);
+	INIT_DELAYED_WORK(&mcb->link_work, mcb_link_work);
 	serdev_device_set_drvdata(serdev, mcb);
 	serdev_device_set_client_ops(serdev, &mcb_serdev_ops);
 
 	device_property_read_u32(dev, "current-speed", &baud);
+
+	/*
+	 * devm releases in reverse order: registered before the port is opened,
+	 * the cancel runs after the port is closed, when receive_buf() can no
+	 * longer re-arm the work, and before mcb is freed.
+	 */
+	ret = devm_add_action_or_reset(dev, mcb_cancel_link_work, mcb);
+	if (ret)
+		return ret;
 
 	/* devm: closed automatically after remove(), before mcb is freed */
 	ret = devm_serdev_device_open(dev, serdev);
