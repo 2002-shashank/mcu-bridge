@@ -9,3 +9,5 @@ __pycache__/
 modules.order
 Module.symvers
 .DS_Store
+# local daemon build
+daemon/mcbd

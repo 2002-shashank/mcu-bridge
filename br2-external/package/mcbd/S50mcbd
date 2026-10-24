@@ -1,0 +1,65 @@
+#!/bin/sh
+#
+# mcbd never forks: start-stop-daemon backgrounds it and writes the pidfile.
+# Started after S10mdev, but mcbd does not rely on the driver being bound yet:
+# it searches for the device until one appears (and again after a removal).
+# No respawn: mcbd recovers from every expected fault itself, so an exit is a
+# bug to look at in /var/log/messages.
+
+DAEMON="mcbd"
+PIDFILE="/var/run/$DAEMON.pid"
+
+MCBD_ARGS=""
+
+# shellcheck source=/dev/null
+[ -r "/etc/default/$DAEMON" ] && . "/etc/default/$DAEMON"
+
+start() {
+	printf 'Starting %s: ' "$DAEMON"
+	# shellcheck disable=SC2086 # we need the word splitting
+	start-stop-daemon --start --background --make-pidfile \
+		--pidfile "$PIDFILE" --exec "/usr/sbin/$DAEMON" \
+		-- $MCBD_ARGS
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "OK"
+	else
+		echo "FAIL"
+	fi
+	return "$status"
+}
+
+stop() {
+	printf 'Stopping %s: ' "$DAEMON"
+	start-stop-daemon --stop --pidfile "$PIDFILE" --exec "/usr/sbin/$DAEMON"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "OK"
+	else
+		echo "FAIL"
+		return "$status"
+	fi
+	while start-stop-daemon --stop --test --quiet --pidfile "$PIDFILE" \
+		--exec "/usr/sbin/$DAEMON"; do
+		sleep 0.1
+	done
+	rm -f "$PIDFILE"
+	return "$status"
+}
+
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+	start|stop|restart)
+		"$1";;
+	reload)
+		# SIGHUP reopens the sample CSV (after an external rotation)
+		start-stop-daemon --stop --signal HUP --pidfile "$PIDFILE" \
+			--exec "/usr/sbin/$DAEMON";;
+	*)
+		echo "Usage: $0 {start|stop|restart|reload}"
+		exit 1
+esac

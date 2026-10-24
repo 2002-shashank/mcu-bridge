@@ -1,1 +1,2 @@
 source "$BR2_EXTERNAL_MCU_BRIDGE_PATH/package/mcb-bridge/Config.in"
+source "$BR2_EXTERNAL_MCU_BRIDGE_PATH/package/mcbd/Config.in"

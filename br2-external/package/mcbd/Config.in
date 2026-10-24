@@ -1,0 +1,7 @@
+config BR2_PACKAGE_MCBD
+	bool "mcbd"
+	depends on BR2_PACKAGE_MCB_BRIDGE
+	help
+	  User-space daemon for the mcb_bridge driver: logs samples to a
+	  CSV file and link events to syslog (daemon/ in the mcu-bridge
+	  repository). Started at boot by /etc/init.d/S50mcbd.

@@ -37,3 +37,5 @@ BR2_TARGET_ROOTFS_EXT2_SIZE="64M"
 
 # Project packages
 BR2_PACKAGE_MCB_BRIDGE=y
+# Boot-started daemon reading the driver (daemon/)
+BR2_PACKAGE_MCBD=y
