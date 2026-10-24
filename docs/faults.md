@@ -68,11 +68,19 @@ What each row shows:
 |---|---|---|---|---|---|
 | ESP32 reset (RTS pulse) | overruns +1, resets +1 | no | peer reboot | 133 | PASS |
 | module unload + reload while streaming | reset to 0 | no | device gone, device found | 1100 | PASS |
+| physical cable unplug ~5 s | resets +1 | yes | stale, link down, link up, peer reboot, fresh | 10762 | PASS |
 
 The 133 ms is the ESP32's real boot time, from the reset pulse to its first
-sample. The physical unplug (`--unplug`) needs a person at the cable. It
-allows any one receive error, because the frame being sent when the cable is
-pulled is cut off at an arbitrary byte.
+sample.
+
+The physical unplug (`--unplug`) needs a person at the cable; on macOS the test
+says when to unplug and, 5 s after the bridge sees the port go, when to plug
+back in. It allows any one receive error, because the frame being sent when the
+cable is pulled is cut off at an arbitrary byte; in this run there was none.
+The reboot is detected through `boot_id`: the board boots while macOS
+enumerates the USB device, so its HELLO is lost. The 10.8 s outage is the whole
+procedure (5 s wait, the person's reaction, USB enumeration, ESP32 boot), not
+a recovery time of the system.
 
 ## Elsewhere
 

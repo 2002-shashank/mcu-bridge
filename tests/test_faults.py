@@ -17,7 +17,7 @@ then that the system recovered (link up, samples fresh) before the next fault.
 A boot without the DT node is the last case. The matrix is printed as markdown
 (docs/faults.md; scripts/ci.sh adds it to the CI summary).
 """
-import argparse, os, re, signal, sys, time
+import argparse, os, re, shutil, signal, subprocess, sys, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from harness import Proc, check, esp32_socket, finish, sim
@@ -177,11 +177,20 @@ def real_faults(g, bridge, unplug):
         bridge.p.send_signal(signal.SIGUSR1)
         bridge.wait_for(lambda l: "reset pulsed" in l, 5)
 
+    def cue(text):
+        """Print, and on macOS also speak: the prompt is not visible when the
+        test runs in the background."""
+        print(f"\n>>> {text} <<<\n", flush=True)
+        if shutil.which("say"):
+            subprocess.Popen(["say", text])
+
     def physical_unplug():
         bridge.drain()
-        print("\n>>> UNPLUG the ESP32's USB cable now, wait ~5 s, then plug it back in <<<\n",
-              flush=True)
-        bridge.wait_for(lambda l: "ESP32 disconnected" in l, 60)
+        cue("Unplug the ESP32 USB cable now")
+        if not bridge.wait_for(lambda l: "ESP32 disconnected" in l, 60):
+            return
+        time.sleep(5)  # longer than the 3 s link timeout
+        cue("Plug the cable back in")
         bridge.wait_for(lambda l: "ESP32 connected" in l, 60)
 
     faults = [
