@@ -100,9 +100,17 @@ tail -f /var/log/messages                      # mcbd: link up/down, stale, peer
 from source: Ubuntu 24.04's QEMU 8.2 creates no second PL011 on the virt
 machine, so the ESP32's UART would not exist in the guest.
 
-## Licenses
+## License
 
-The C, device tree and firmware sources carry SPDX identifiers: kernel driver
-and daemon GPL-2.0-only; firmware Apache-2.0; the DT binding GPL-2.0-only OR
-BSD-2-Clause; the shared protocol header GPL-2.0-only OR MIT. There is no
-top-level license file yet, and the scripts and tests carry none.
+The project is under the [MIT license](LICENSE). Files under a different
+license say so in their `SPDX-License-Identifier` line, which takes precedence;
+files without one are MIT.
+
+| Files | License |
+|---|---|
+| scripts, tests, Python protocol mirror, and everything without an SPDX line | MIT |
+| kernel driver (`driver/`) and the DT overlay (`dts/esp32-bridge.dtso`) | GPL-2.0-only, the Linux kernel's license |
+| shared protocol header (`protocol/mcb_proto.h`) and its conformance test | GPL-2.0-only OR MIT: usable in the kernel and in the firmware |
+| DT binding (`dts/bindings/`) | GPL-2.0-only OR BSD-2-Clause, the kernel's convention for bindings |
+| daemon (`daemon/mcbd.c`) | GPL-2.0-only |
+| firmware (`firmware/`) | Apache-2.0, Zephyr's license |

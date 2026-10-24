@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Validate the DT binding and the merged DTB with dtschema. Runs on a Linux host (VM or CI).
 #
 #   scripts/check-dt.sh [DTB]     DTB defaults to out/dtb/virt.dtb (written by run-qemu.sh)

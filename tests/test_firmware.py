@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Firmware test: speak the protocol directly over the ESP32's USB serial port
 (no QEMU, no driver), so a failure points at the firmware alone.
 

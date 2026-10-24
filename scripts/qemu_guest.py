@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Drive the mcu-bridge QEMU guest over its serial console (scripts/run-qemu.sh).
 
     g = Guest(env={"DT_OVERLAY": "none"})

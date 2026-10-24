@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """mcu-bridge wire protocol in Python, mirroring protocol/mcb_proto.h.
 
 Used by the simulated ESP32, the host bridge and the tests. See docs/protocol.md.

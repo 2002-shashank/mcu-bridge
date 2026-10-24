@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Build/flash the Zephyr firmware in a clean environment: ~/.zprofile sources
 # ESP-IDF, which conflicts with Zephyr, so nothing from the login shell leaks in.
 #

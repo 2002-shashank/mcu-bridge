@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Guest-side helpers for tests that look at mcbd: its syslog lines, its SIGUSR1
 status line and its sample CSV."""
 import re, time

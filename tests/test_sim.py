@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Simulator self-test (no QEMU): the test listens on the socket like QEMU does
 and checks that each fault injection has exactly the documented effect, since
 the driver fault tests derive their expected counters from it."""

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Daemon test: mcbd started at boot, against the simulated ESP32.
 
 Checks the sample CSV (rate, contiguous seq, age), exact sample accounting

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Link test without the driver: guest ttyAMA1 is a plain tty (DT_OVERLAY=none).
 
     tests/test_link.py                 simulated ESP32 (scripts/esp32-sim.py)

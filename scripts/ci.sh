@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # CI stages on a Linux host. .github/workflows/ci.yml only calls this script, so
 # every stage runs the same way in the Lima VM.
 #
@@ -216,7 +217,7 @@ main() {
         checks)   stage_checks ;;
         qemu)     stage_qemu ;;
         firmware) stage_firmware ;;
-        *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+        *) sed -n '3,18p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
     esac
 }
 

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """DT node test: the overlay hands ttyAMA1 to serdev; without it the port stays a tty.
 
   with overlay      /dev/ttyAMA1 absent, serdev device serial0-0 with our compatible

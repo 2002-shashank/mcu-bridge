@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Measure boot time and image size of the mcu-bridge image.
 
 usage: scripts/measure-boot.py [-n RUNS]      (ACCEL=hvf etc. are passed to run-qemu.sh)

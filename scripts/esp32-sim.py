@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Simulated mcu-bridge ESP32: speaks docs/protocol.md on QEMU's ESP32 socket.
 
     scripts/esp32-sim.py [--socket out/esp32.sock] [--rate 50] [--channels 4]

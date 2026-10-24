@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Pump bytes between the real ESP32's USB serial port and QEMU's ESP32 socket.
 
     scripts/esp32-bridge.py [--tty /dev/cu.usbserial-110] [--socket out/esp32.sock]

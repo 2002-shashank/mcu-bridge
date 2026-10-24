@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Measure PING round-trip latency at three points of the path (docs/latency.md).
 
     scripts/measure-ping.py direct [-n N] [--rate HZ] [--token BYTES]

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Protocol tests: Python implementation behavior, plus conformance of the C
 header (protocol/mcb_proto.h, built with ASan/UBSan) against Python.
 

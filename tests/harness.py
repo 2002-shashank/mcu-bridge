@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Shared helpers for the QEMU-level tests: result reporting and child processes."""
 import os, queue, subprocess, sys, threading, time
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Build the mcu-bridge image. Runs on a Linux host (Lima VM locally, Ubuntu in CI).
 #
 #   scripts/build.sh            fetch pinned Buildroot if needed, configure, build

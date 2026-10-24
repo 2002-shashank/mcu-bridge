@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Bridge recovery test without hardware or QEMU.
 
 The ESP32 port is a symlink to a pty, the test plays QEMU's socket server.

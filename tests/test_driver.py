@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Driver test: guest with the DT overlay (mcb_bridge binds via coldplug) talking
 to the simulated ESP32, or with --real to the ESP32 firmware through the bridge.
 

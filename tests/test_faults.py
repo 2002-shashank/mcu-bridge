@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+# SPDX-License-Identifier: MIT
 """Fault-test suite: inject one fault at a time and check every layer at once.
 
     tests/test_faults.py                  simulated ESP32: every fault below

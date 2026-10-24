@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Boot the image in QEMU (native on macOS so the guest can reach the USB serial port).
 #
 #   scripts/run-qemu.sh

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
 # Static checks for the driver on a Linux host (VM or CI), against the
 # Buildroot-built kernel: W=1 warnings, sparse (C=1) and checkpatch --strict.
 # Builds from a scratch copy so no objects land in the repo.

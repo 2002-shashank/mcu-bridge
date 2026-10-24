@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Speak the mcu-bridge protocol directly to the ESP32 over its USB serial port
 (no QEMU, no driver). Used by tests/test_firmware.py and scripts/measure-ping.py."""
 import os, random, select, time

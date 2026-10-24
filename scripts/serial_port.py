@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Serial port helpers shared by the bridge and the firmware test."""
 import fcntl, os, struct, termios, time, tty
 
