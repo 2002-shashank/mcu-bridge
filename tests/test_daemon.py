@@ -47,6 +47,13 @@ def status(g):
                 rate=int(rate), rows=int(rows), missed=int(missed))
 
 
+def csv_growth(g, secs):
+    """CSV rows added over `secs` of guest time (one guest command: console round
+    trips, slow on a KASAN kernel under TCG, are not counted)."""
+    a, b = g.run(f"a=$(wc -l < {CSV}); sleep {secs}; echo $a $(wc -l < {CSV})").split()
+    return int(b) - int(a)
+
+
 def csv_rows(g, n):
     rows = []
     for line in g.run(f"tail -n {n} {CSV}").splitlines():
@@ -90,10 +97,8 @@ def boot_checks(g):
     check("driver: rx_ns is CLOCK_MONOTONIC (within 1 s of uptime)",
           abs(int(fields[3]) - up_ns) < 1e9, f"{int(fields[3])} vs {up_ns:.0f}")
 
-    n0 = int(g.run(f"wc -l < {CSV}"))
-    time.sleep(2)
-    n1 = int(g.run(f"wc -l < {CSV}"))
-    check("CSV at ~50 rows/s", 80 <= n1 - n0 <= 120, f"{(n1 - n0) / 2:.0f}/s")
+    n = csv_growth(g, 2)
+    check("CSV at ~50 rows/s", 80 <= n <= 120, f"{n / 2:.0f}/s")
     rows = csv_rows(g, 50)
     gaps = [b["seq"] - a["seq"] for a, b in zip(rows, rows[1:]) if b["seq"] - a["seq"] != 1]
     check("seq contiguous over 50 rows", not gaps, str(gaps[:5]))
@@ -153,12 +158,14 @@ def accounting_checks(g):
 
     g.run(f"echo 200 > {DEV}/rate")
     time.sleep(0.5)
+    n = csv_growth(g, 2)
+    check("200 Hz: ~200 rows/s", 300 <= n <= 440, f"{n / 2:.0f}/s")
     a = status(g)
     time.sleep(2)
     b = status(g)
     rows = b["rows"] - a["rows"]
-    check("200 Hz: ~200 rows/s", 300 <= rows <= 440, f"{rows / 2:.0f}/s, missed {b['missed'] - a['missed']}")
-    check("200 Hz: accounting exact", rows + b["missed"] - a["missed"] == b["count"] - a["count"])
+    check("200 Hz: accounting exact", rows + b["missed"] - a["missed"] == b["count"] - a["count"],
+          f"rows {rows} + missed {b['missed'] - a['missed']} vs count {b['count'] - a['count']}")
     check("rate change picked up", b["rate"] == 200, str(b["rate"]))
     g.run(f"echo 50 > {DEV}/rate")
 

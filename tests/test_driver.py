@@ -28,6 +28,12 @@ class Driver:
         out = self.g.run(f"echo {value} > {DEV}/{attr} && echo OK", timeout=10)
         return "" if out.endswith("OK") else out
 
+    def delta(self, attr, secs=1):
+        """Change of a counter over `secs` of guest time. One guest command, so the
+        console round trips (slow on a KASAN kernel under TCG) are not counted."""
+        a, b = self.g.run(f"a=$(cat {DEV}/{attr}); sleep {secs}; echo $a $(cat {DEV}/{attr})").split()
+        return int(b) - int(a)
+
     def counters(self):
         vals = self.g.run(f"cd {DEV} && cat {' '.join(COUNTERS)}").split()
         return dict(zip(COUNTERS, map(int, vals)))
@@ -75,10 +81,7 @@ def main():
         check("ttyAMA1 owned by serdev (no tty node)", "No such file" in g.run("ls /dev/ttyAMA1 2>&1"))
 
         print("data")
-        c0 = drv.counters()
-        time.sleep(1)
-        c1 = drv.counters()
-        rate = c1["rx_frames"] - c0["rx_frames"]
+        rate = drv.delta("rx_frames")
         check("frames at ~50 Hz", 40 <= rate <= 60, f"{rate}/s")
         check("link_up", drv.read("link_up") == "1")
         ch = drv.read("channels").split()
@@ -98,9 +101,7 @@ def main():
         check("ping_rtt_us", rtt.isdigit() and 0 < int(rtt) < 500000, f"{rtt} us")
         check("rate 20 accepted", drv.write("rate", 20) == "")
         check("rate reads back 20", drv.read("rate") == "20")
-        c0 = drv.counters()
-        time.sleep(1)
-        got = drv.counters()["rx_frames"] - c0["rx_frames"]
+        got = drv.delta("rx_frames")
         check("stream now ~20 Hz", 15 <= got <= 25, f"{got}/s")
         check("rate 0 rejected locally", "Invalid argument" in drv.write("rate", 0))
         check("rate 500 rejected locally", "Invalid argument" in drv.write("rate", 500))
@@ -170,6 +171,7 @@ def link_loss_checks(drv, s):
 
 def module_reload_checks(g, drv):
     print("module unload / reload under load")
+    before = drv.counters()["rx_frames"]
     out = g.run("rmmod mcb_bridge; echo rc=$?")
     check("rmmod while streaming", out.endswith("rc=0"), out)
     check("unbound", "No such file" in g.run(f"ls {DEV}/driver 2>&1"))
@@ -177,10 +179,11 @@ def module_reload_checks(g, drv):
     out = g.run("modprobe mcb_bridge; echo rc=$?")
     check("modprobe", out.endswith("rc=0"), out)
     time.sleep(1)
-    c = drv.counters()
+    fresh = drv.counters()["rx_frames"]
+    check("rebound with fresh counters", 0 < fresh < before, f"rx_frames {fresh} (was {before})")
     # rate is 50 again: the sim rebooted on unplug, the real board was set back
-    check("rebound with fresh counters, data flowing", 30 <= c["rx_frames"] <= 70,
-          f"rx_frames={c['rx_frames']}")
+    rate = drv.delta("rx_frames")
+    check("data flowing at ~50 Hz after rebind", 40 <= rate <= 60, f"{rate}/s")
 
 
 if __name__ == "__main__":

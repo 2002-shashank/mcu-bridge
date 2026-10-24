@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: scripts/ci.sh deps
       - run: scripts/ci.sh host
 
@@ -41,7 +41,7 @@ jobs:
       VARIANT: ${{ matrix.variant }}
       CCACHE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Free disk space
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -53,19 +53,34 @@ jobs:
           path: ${{ env.QEMU_PREFIX }}
           key: ${{ env.QEMU_PREFIX }}-ubuntu-24.04   # the version is in the path
       - run: scripts/ci.sh qemu-bin
-      - name: Cache Buildroot downloads
-        uses: actions/cache@v4
+      # restore/save split: the caches are saved once the build succeeds, even if a
+      # later test fails (a plain actions/cache saves only when the whole job passes)
+      - name: Restore Buildroot downloads
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.BR2_DL_DIR }}
           key: br-dl-${{ hashFiles('scripts/build.sh', 'br2-external/**/*.hash', 'br2-external/configs/*') }}
           restore-keys: br-dl-
-      - name: Cache ccache
-        uses: actions/cache@v4
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.buildroot-ccache
           key: ccache-${{ matrix.variant || 'release' }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.variant || 'release' }}-
-      - run: scripts/ci.sh build
+      - id: build
+        run: scripts/ci.sh build
+      - name: Save Buildroot downloads
+        if: always() && steps.build.outcome == 'success' && matrix.variant == ''
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.BR2_DL_DIR }}
+          key: br-dl-${{ hashFiles('scripts/build.sh', 'br2-external/**/*.hash', 'br2-external/configs/*') }}
+      - name: Save ccache
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: ccache-${{ matrix.variant || 'release' }}-${{ github.sha }}
       - if: matrix.variant == ''
         run: scripts/ci.sh checks
       - run: scripts/ci.sh qemu
@@ -89,7 +104,7 @@ jobs:
       ZEPHYR_WS: /home/runner/zephyrproject
       ZEPHYR_SDK: /home/runner/zephyr-sdk-1.0.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: scripts/ci.sh deps
       - name: Cache Zephyr workspace and SDK
         uses: actions/cache@v4
