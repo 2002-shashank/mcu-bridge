@@ -9,8 +9,8 @@
 #                            simulator, bridge, mcbd built with -Werror and run under ASan
 #   scripts/ci.sh build      scripts/build.sh (honours VARIANT, CCACHE)
 #   scripts/ci.sh checks     driver static checks (W=1, sparse, checkpatch)
-#   scripts/ci.sh qemu       boot tests against the simulator, DT validation, boot time
-#                            (VARIANT=debug: driver and daemon tests only)
+#   scripts/ci.sh qemu       boot tests against the simulator (incl. the fault matrix), DT
+#                            validation, boot time (VARIANT=debug: driver, daemon, faults)
 #   scripts/ci.sh firmware   Zephyr workspace (shallow, hal_espressif only) + firmware build
 #
 # Overridable: WORK, BR2_DL_DIR, QEMU_PREFIX, IMAGES (images dir, default out[/debug]), LOGS (test logs,
@@ -52,6 +52,10 @@ run_tests() {
         echo "::endgroup::"
         if [ "$rc" -eq 0 ]; then
             echo "- ✅ \`$t\` $(grep -h '^RESULT' "$LOGS/$name.log" || echo ok)" >> "$SUMMARY"
+            # markdown tables a test prints (test_faults' fault matrix)
+            if grep -q '^|' "$LOGS/$name.log"; then
+                { echo; grep -h '^|' "$LOGS/$name.log"; echo; } >> "$SUMMARY"
+            fi
         else
             echo "FAIL: $t (rc=$rc)"
             failed+=("$t")
@@ -147,11 +151,12 @@ stage_checks() {
 stage_qemu() {
     echo "## QEMU tests${VARIANT:+ ($VARIANT kernel)}" >> "$SUMMARY"
     if [ "$VARIANT" = debug ]; then
-        run_tests tests/test_driver.py tests/test_daemon.py
+        run_tests tests/test_driver.py tests/test_daemon.py tests/test_faults.py
         finish
         return
     fi
-    run_tests tests/test_dt_node.py tests/test_link.py tests/test_driver.py tests/test_daemon.py
+    run_tests tests/test_dt_node.py tests/test_link.py tests/test_driver.py tests/test_daemon.py \
+        tests/test_faults.py
 
     # run-qemu.sh wrote the merged DTB during the boots above
     if "$REPO/scripts/check-dt.sh" "$IMAGES/dtb/virt.dtb" 2>&1 | tee "$LOGS/check-dt.log"; then

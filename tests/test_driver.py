@@ -1,10 +1,10 @@
 #!/usr/bin/python3
 """Driver test: guest with the DT overlay (mcb_bridge binds via coldplug) talking
-to the simulated ESP32, or with --real to the ESP32 firmware through the bridge
-(simulator-only fault injections are skipped).
+to the simulated ESP32, or with --real to the ESP32 firmware through the bridge.
 
-Counter checks use deltas around one injected fault and require the exact
-change in every counter, including zero for the ones that must not move.
+Binding, data, counters, PING and SET_RATE. Injected faults (corruption, drops,
+resets, unplugs, module reload) are in tests/test_faults.py; --real also runs
+a reset pulse and a module reload against the real board end to end.
 """
 import argparse, os, signal, sys, time
 
@@ -92,8 +92,6 @@ def main():
 
         if real:
             real_board_checks(drv, s)
-        else:
-            sim_fault_checks(drv, s)
 
         print("commands")
         check("ping", drv.write("ping", 1) == "")
@@ -106,12 +104,9 @@ def main():
         check("rate 0 rejected locally", "Invalid argument" in drv.write("rate", 0))
         check("rate 500 rejected locally", "Invalid argument" in drv.write("rate", 500))
 
+        check("rate back to 50", drv.write("rate", 50) == "")
         if real:
-            check("rate back to 50", drv.write("rate", 50) == "")
-        else:
-            link_loss_checks(drv, s)
-
-        module_reload_checks(g, drv)
+            module_reload_checks(g, drv)
 
         print("kernel log")
         bad = g.run("dmesg | grep -E 'BUG:|WARNING:|Oops|refcount_t:' || true")
@@ -137,36 +132,6 @@ def real_board_checks(drv, bridge):
     d = {k: v - c0[k] for k, v in drv.counters().items()}
     check("3 s at 50 Hz with no errors or drops",
           140 <= d["rx_frames"] <= 160 and not any(v for k, v in d.items() if k != "rx_frames"), str(d))
-
-
-def sim_fault_checks(drv, s):
-    print("fault injection (exact counter deltas)")
-    expect_delta("corrupt 5", delta_after(drv, lambda: s.send("corrupt 5")),
-                 crc_errors=5, dropped_frames=5)
-    expect_delta("drop 7", delta_after(drv, lambda: s.send("drop 7")), dropped_frames=7)
-    expect_delta("garbage 200", delta_after(drv, lambda: s.send("garbage 200")),
-                 overruns=1, dropped_frames=1)
-    expect_delta("reset", delta_after(drv, lambda: s.send("reset")), resets=1, overruns=1)
-    check("HELLO: fw_version", drv.read("fw_version") == "0.1.0", drv.read("fw_version"))
-    check("HELLO: rate", drv.read("rate") == "50", drv.read("rate"))
-    s.drain()
-    expect_delta("unplug 1 (HELLO lost, boot_id)", delta_after(
-        drv, lambda: (s.send("unplug 1"), s.wait_for(lambda l: '"ready"' in l, 10)),
-        settle=0.5), resets=1)
-
-
-def link_loss_checks(drv, s):
-    print("link loss")
-    s.drain()
-    s.send("unplug 5")
-    time.sleep(3.6)
-    check("link_up drops after 3 s of silence", drv.read("link_up") == "0")
-    t = time.monotonic()
-    err = drv.write("ping", 1)
-    check("ping times out while unplugged", "timed out" in err, f"{err!r} in {time.monotonic() - t:.2f}s")
-    s.wait_for(lambda l: '"ready"' in l, 10)
-    time.sleep(0.5)
-    check("link_up again after replug", drv.read("link_up") == "1")
 
 
 def module_reload_checks(g, drv):

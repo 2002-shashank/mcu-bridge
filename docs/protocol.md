@@ -83,6 +83,11 @@ Timestamps are only ever compared by unsigned subtraction
 
 ## Receiver behavior
 
+A receiver that opens the line while the sender is already transmitting (the
+driver at probe or rebind) discards bytes up to the first `0x00`: it cannot
+tell where a frame starts, and the tail of a frame is not an error. At most one
+frame is lost, before sequence tracking starts.
+
 Processing a frame, in this order:
 
 1. COBS-decode. Invalid encoding or fewer than 16 bytes → **framing error**.

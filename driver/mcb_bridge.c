@@ -54,6 +54,7 @@ struct mcb_dev {
 	/* receive path only (serialized by the tty port) */
 	struct mcb_rx rx;
 	struct mcb_seq seq;
+	bool rx_synced;			/* a delimiter seen since the port opened */
 
 	spinlock_t lock;		/* fields below up to cmd_lock */
 	struct mcb_stats stats;
@@ -205,9 +206,23 @@ static size_t mcb_receive_buf(struct serdev_device *serdev, const u8 *buf, size_
 {
 	struct mcb_dev *mcb = serdev_device_get_drvdata(serdev);
 	struct mcb_frame f;
-	size_t i;
+	size_t i = 0;
 
-	for (i = 0; i < count; i++) {
+	/*
+	 * Opened mid-stream (probe, rebind): the first bytes are usually the tail
+	 * of a frame. Hunt for the first delimiter instead of counting that as a
+	 * framing error; at most one frame is lost, before seq tracking starts.
+	 */
+	if (!mcb->rx_synced) {
+		const u8 *d = memchr(buf, 0, count);
+
+		if (!d)
+			return count;
+		i = d - buf + 1;
+		mcb->rx_synced = true;
+	}
+
+	for (; i < count; i++) {
 		enum mcb_rx_status st = mcb_rx_byte(&mcb->rx, buf[i], &f);
 
 		switch (st) {
