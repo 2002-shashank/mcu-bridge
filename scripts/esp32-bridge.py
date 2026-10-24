@@ -10,10 +10,17 @@ guest not reading ttyAMA1 so QEMU stops reading the socket) are dropped and
 counted. A blocking write would freeze the bridge and hide an unplug.
 
     kill -USR1 <pid>   reset the ESP32 (CYD auto-reset circuit: RTS -> EN)
+
+--trace also decodes both directions and logs, for every PONG, the time from
+the PING's last byte written to the tty to the PONG's last byte read from it:
+the USB serial + UART + firmware part of the guest's ping round trip.
 """
 import argparse, errno, os, select, signal, socket, sys, time
 
 from serial_port import open_tty, pulse_reset
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "protocol"))
+import mcb_proto as P
 
 POLL_S = 0.5
 
@@ -23,8 +30,11 @@ def log(msg):
 
 
 class Bridge:
-    def __init__(self, tty_path, sock_path):
+    def __init__(self, tty_path, sock_path, trace=False):
         self.tty_path, self.sock_path = tty_path, sock_path
+        self.trace = trace
+        self.to_esp32_rx, self.to_guest_rx = P.Receiver(), P.Receiver()
+        self.ping_sent = {}  # PING seq -> time its last byte was written
         self.tty = self.sock = None
         self.tty_rdev = None
         self.reset_requested = False
@@ -101,6 +111,19 @@ class Bridge:
             return
         self.stats["to_esp32"] += n
         self.stats["dropped_to_esp32"] += len(data) - n
+        if self.trace:
+            now = time.monotonic()
+            for st, f in self.to_esp32_rx.feed(data[:n]):
+                if st == P.RX_FRAME and f.type == P.TYPE_PING:
+                    self.ping_sent[f.seq] = now
+
+    def trace_from_esp32(self, data, now):
+        for st, f in self.to_guest_rx.feed(data):
+            if st != P.RX_FRAME or f.type != P.TYPE_PONG or len(f.payload) < 4:
+                continue
+            t0 = self.ping_sent.pop(int.from_bytes(f.payload[:4], "little"), None)
+            if t0 is not None:
+                log(f"trace pong rtt_us={(now - t0) * 1e6:.0f}")
 
     def sock_write(self, data):
         try:
@@ -139,6 +162,8 @@ class Bridge:
                 if not data:
                     self.tty_lost("EOF")
                     continue
+                if self.trace:
+                    self.trace_from_esp32(data, time.monotonic())
                 if self.sock is not None:
                     self.sock_write(data)
                 else:
@@ -161,9 +186,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--tty", default="/dev/cu.usbserial-110")
     ap.add_argument("--socket", default=os.path.join(repo, "out", "esp32.sock"))
+    ap.add_argument("--trace", action="store_true", help="log tty-side PING/PONG round trips")
     args = ap.parse_args()
     try:
-        Bridge(args.tty, args.socket).run()
+        Bridge(args.tty, args.socket, args.trace).run()
     except KeyboardInterrupt:
         pass
 
