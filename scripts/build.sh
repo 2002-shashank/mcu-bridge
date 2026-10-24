@@ -5,8 +5,11 @@
 #   scripts/build.sh <target>   pass a make target through (menuconfig, linux-rebuild, ...)
 #
 #   VARIANT=debug scripts/build.sh   lockdep/KASAN kernel, own output dir, images to out/debug
+#   CCACHE=1 scripts/build.sh        compiler cache in ~/.buildroot-ccache (CI; off locally so
+#                                    the committed defconfig stays what is built)
 #
-# Overridable: WORK (build root, must be on a case-sensitive Linux fs), BR2_DL_DIR.
+# Overridable: WORK (build root, must be on a case-sensitive Linux fs), BR2_DL_DIR,
+# IMAGES_OUT (where Image and rootfs.ext2 are copied).
 set -euo pipefail
 
 BR_VERSION=2026.02.3
@@ -18,7 +21,7 @@ WORK="${WORK:-$HOME/build}"
 BR_DIR="$WORK/buildroot-$BR_VERSION"
 VARIANT="${VARIANT:-}"
 OUT="$WORK/qemu-aarch64${VARIANT:+-$VARIANT}"
-IMAGES_OUT="$REPO/out${VARIANT:+/$VARIANT}"
+IMAGES_OUT="${IMAGES_OUT:-$REPO/out${VARIANT:+/$VARIANT}}"
 export BR2_DL_DIR="${BR2_DL_DIR:-$HOME/br-dl}"
 
 mkdir -p "$WORK" "$BR2_DL_DIR"
@@ -42,6 +45,10 @@ br_make "$DEFCONFIG"
 if [ "$VARIANT" = debug ]; then
     frag='$(BR2_EXTERNAL_MCU_BRIDGE_PATH)/board/qemu-aarch64'
     sed -i "s|^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=.*|BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=\"$frag/linux.fragment $frag/linux-debug.fragment\"|" "$OUT/.config"
+    br_make olddefconfig
+fi
+if [ "${CCACHE:-0}" = 1 ]; then
+    printf '%s\n' 'BR2_CCACHE=y' 'BR2_CCACHE_INITIAL_SETUP="--max-size=2G"' >> "$OUT/.config"
     br_make olddefconfig
 fi
 br_make

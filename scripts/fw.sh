@@ -6,7 +6,8 @@
 #   scripts/fw.sh flash      flash at 115200 (ESP32_TTY, default /dev/cu.usbserial-110)
 #   scripts/fw.sh pristine   clean rebuild
 #
-#   ZEPHYR_WS (default ~/zephyrproject), ZEPHYR_SDK (default ~/zephyr-sdk-1.0.1)
+#   ZEPHYR_WS (default ~/zephyrproject), ZEPHYR_SDK (default ~/zephyr-sdk-1.0.1),
+#   FW_BUILD (build dir, default out/fw)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,7 +15,7 @@ WS="${ZEPHYR_WS:-$HOME/zephyrproject}"
 SDK="${ZEPHYR_SDK:-$HOME/zephyr-sdk-1.0.1}"
 TTY="${ESP32_TTY:-/dev/cu.usbserial-110}"
 BOARD=esp32_devkitc/esp32/procpu
-BUILD="$REPO/out/fw"
+BUILD="${FW_BUILD:-$REPO/out/fw}"
 
 clean_env() {
     env -i HOME="$HOME" TERM="${TERM:-dumb}" \

@@ -1,0 +1,102 @@
+# Every step calls scripts/ci.sh, which runs the same way in the Lima VM.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  WORK: /home/runner/build
+  BR2_DL_DIR: /home/runner/br-dl
+  QEMU_PREFIX: /home/runner/qemu-11.0.2   # built from source: apt's 8.2 has one virt PL011
+
+jobs:
+  host:
+    name: host tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/ci.sh deps
+      - run: scripts/ci.sh host
+
+  image:
+    name: image (${{ matrix.variant || 'release' }})
+    needs: host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ["", debug]    # debug: lockdep, atomic-sleep and KASAN kernel
+    env:
+      VARIANT: ${{ matrix.variant }}
+      CCACHE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - run: scripts/ci.sh deps
+      - name: Cache QEMU
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QEMU_PREFIX }}
+          key: ${{ env.QEMU_PREFIX }}-ubuntu-24.04   # the version is in the path
+      - run: scripts/ci.sh qemu-bin
+      - name: Cache Buildroot downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BR2_DL_DIR }}
+          key: br-dl-${{ hashFiles('scripts/build.sh', 'br2-external/**/*.hash', 'br2-external/configs/*') }}
+          restore-keys: br-dl-
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: ccache-${{ matrix.variant || 'release' }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.variant || 'release' }}-
+      - run: scripts/ci.sh build
+      - if: matrix.variant == ''
+        run: scripts/ci.sh checks
+      - run: scripts/ci.sh qemu
+      - name: Upload logs and images
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-${{ matrix.variant || 'release' }}
+          path: |
+            out/**/logs/
+            out/**/Image
+            out/**/rootfs.ext2
+            out/**/dtb/
+          retention-days: 7
+
+  firmware:
+    name: firmware (Zephyr, ESP32)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ZEPHYR_WS: /home/runner/zephyrproject
+      ZEPHYR_SDK: /home/runner/zephyr-sdk-1.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/ci.sh deps
+      - name: Cache Zephyr workspace and SDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ZEPHYR_WS }}
+            ${{ env.ZEPHYR_SDK }}
+          key: zephyr-v4.4.2-sdk-1.0.1-${{ hashFiles('scripts/ci.sh') }}
+          restore-keys: zephyr-v4.4.2-sdk-1.0.1-
+      - run: scripts/ci.sh firmware

@@ -45,6 +45,13 @@ if [ "$DT_OVERLAY" != none ]; then
     mkdir -p "$dtdir"
     qemu-system-aarch64 -M virt,dumpdtb="$dtdir/virt-base.dtb" "${machine[@]}" \
         -serial null -serial null >/dev/null
+    # no "dtc | grep -q": grep exiting early SIGPIPEs dtc, which pipefail reports as failure
+    if ! fdtget -l "$dtdir/virt-base.dtb" / > "$dtdir/root-nodes" ||
+       ! grep -qx 'pl011@9040000' "$dtdir/root-nodes"; then
+        echo "error: $(qemu-system-aarch64 --version | head -1) creates no second PL011" \
+             "for the 2nd -serial (Ubuntu 24.04's 8.2 does not; 11.0.2 does)" >&2
+        exit 1
+    fi
     dtc -q -I dts -O dtb -o "$dtdir/overlay.dtbo" "$DT_OVERLAY"
     fdtoverlay -i "$dtdir/virt-base.dtb" -o "$dtdir/virt.dtb" "$dtdir/overlay.dtbo"
     dtb=(-dtb "$dtdir/virt.dtb")
