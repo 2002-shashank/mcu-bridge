@@ -48,7 +48,7 @@ jobs:
           df -h /
       - run: scripts/ci.sh deps
       - name: Cache QEMU
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.QEMU_PREFIX }}
           key: ${{ env.QEMU_PREFIX }}-ubuntu-24.04   # the version is in the path
@@ -56,13 +56,13 @@ jobs:
       # restore/save split: the caches are saved once the build succeeds, even if a
       # later test fails (a plain actions/cache saves only when the whole job passes)
       - name: Restore Buildroot downloads
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ env.BR2_DL_DIR }}
           key: br-dl-${{ hashFiles('scripts/build.sh', 'br2-external/**/*.hash', 'br2-external/configs/*') }}
           restore-keys: br-dl-
       - name: Restore ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ~/.buildroot-ccache
           key: ccache-${{ matrix.variant || 'release' }}-${{ github.sha }}
@@ -71,13 +71,13 @@ jobs:
         run: scripts/ci.sh build
       - name: Save Buildroot downloads
         if: always() && steps.build.outcome == 'success' && matrix.variant == ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ env.BR2_DL_DIR }}
           key: br-dl-${{ hashFiles('scripts/build.sh', 'br2-external/**/*.hash', 'br2-external/configs/*') }}
       - name: Save ccache
         if: always() && steps.build.outcome == 'success'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ~/.buildroot-ccache
           key: ccache-${{ matrix.variant || 'release' }}-${{ github.sha }}
@@ -86,7 +86,7 @@ jobs:
       - run: scripts/ci.sh qemu
       - name: Upload logs and images
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: image-${{ matrix.variant || 'release' }}
           path: |
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/checkout@v5
       - run: scripts/ci.sh deps
       - name: Cache Zephyr workspace and SDK
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ env.ZEPHYR_WS }}
